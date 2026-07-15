@@ -1,5 +1,7 @@
 import { PHYSICS as P, WORLD } from './config.js';
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 // Мяч: позиция (x — вбок, y — вверх, z — вглубь к воротам), скорости, spin.
 export function createBall() {
   return {
@@ -31,26 +33,31 @@ export function shotVelocity({ power, dirX, dirY, spin }) {
   const shotSpeed = Math.max(P.minPower, Math.min(P.maxPower, power));
   const lift = Math.max(0, Math.min(1, dirY));
   const powerMix = (shotSpeed - P.minPower) / (P.maxPower - P.minPower);
+  const side = Math.max(-1, Math.min(1, dirX));
   return {
-    // Полный боковой жест теперь действительно может увести мяч мимо ворот.
-    vx: shotSpeed * dirX * 0.27,
+    // Широкий сектор удара позволяет возвращать мяч к воротам даже с фланга.
+    vx: shotSpeed * side * P.shotSideFactor,
     // Низ, рабочее окно и удар выше перекладины — всё определяется высотой жеста.
     vy: (2.1 + lift * 7.4) * (0.87 + powerMix * 0.13) * P.liftFactor,
-    vz: shotSpeed * (0.76 + lift * 0.24) * P.forwardFactor,
+    vz: shotSpeed * (0.76 + lift * 0.24)
+      * (1 - Math.abs(side) * P.shotSideForwardLoss) * P.forwardFactor,
     spin,
   };
 }
 
 // Превью траектории при прицеливании: симулируем полёт на клоне мяча
 // до previewFraction дистанции (дальше игрок должен угадывать сам).
-export function simulatePreview(params, env, origin) {
+export function simulatePreview(params, env, origin, airborneRekick = false) {
   const v = shotVelocity(params);
-  const start = origin || { x: 0, y: 0, z: 0, vx: 0, spin: 0 };
+  const start = origin || { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spin: 0 };
+  const carryVx = airborneRekick ? (start.vx || 0) * P.rekickCarryX : (start.vx || 0);
+  const carryVy = airborneRekick ? clamp((start.vy || 0) * P.rekickCarryY, -1.6, 1.6) : 0;
+  const carryVz = airborneRekick ? clamp((start.vz || 0) * P.rekickCarryZ, -1.2, 0.8) : 0;
   const clone = {
     x: start.x, y: start.y, z: start.z,
-    vx: (start.vx || 0) + v.vx,
-    vy: v.vy,
-    vz: v.vz,
+    vx: carryVx + v.vx,
+    vy: v.vy + carryVy,
+    vz: v.vz + carryVz,
     spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, v.spin + (start.spin || 0) * 0.6)),
     resting: false,
     trajectory: [{ x: start.x, y: start.y, z: start.z }],
@@ -72,7 +79,7 @@ export function simulatePreview(params, env, origin) {
 }
 
 // Один тик физики (dt в секундах, фиксированный 1/60).
-// Возвращает событие: null | 'goal' | 'topCorner' | 'post' | 'wall' | 'miss' | 'out' | 'stopped'
+// Возвращает событие: null | 'goal' | 'topCorner' | 'post' | 'wall' | 'targetBlock' | 'miss' | 'out' | 'stopped'
 export function stepBall(ball, dt, env) {
   if (ball.resting) return null;
 
@@ -166,10 +173,21 @@ export function stepBall(ball, dt, env) {
     if (overlapsOpening) {
       const corner = (hw - Math.min(Math.abs(ix), hw) < WORLD.topCornerX * env.goalScale)
         && (gh - Math.min(iy, gh) < WORLD.topCornerY);
-      ball.x = ix; ball.y = Math.max(0, iy); ball.z = env.goalZ + 0.4;
-      ball.vx = 0; ball.vy = 0; ball.vz = 0;
-      ball.resting = true;
-      event = corner ? 'topCorner' : 'goal';
+      if (env.targetMode === 'corners' && !corner) {
+        // В режиме «только девятка» остальной створ — физическая стенка.
+        // Она возвращает мяч в поле и сразу открывает возможность нового удара.
+        ball.x = ix; ball.y = Math.max(0, iy); ball.z = env.goalZ - 0.02;
+        ball.vz = -Math.abs(ball.vz) * P.targetBlockBounce;
+        ball.vx *= 0.68;
+        ball.vy *= 0.62;
+        ball.spin *= 0.65;
+        event = 'targetBlock';
+      } else {
+        ball.x = ix; ball.y = Math.max(0, iy); ball.z = env.goalZ + 0.4;
+        ball.vx = 0; ball.vy = 0; ball.vz = 0;
+        ball.resting = true;
+        event = corner ? 'topCorner' : 'goal';
+      }
     } else if (hitPost || hitBar) {
       ball.z = env.goalZ - 0.01;
       ball.x = ix; ball.y = iy;

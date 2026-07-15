@@ -9,6 +9,9 @@ A lightweight desktop browser game about bending free kicks around the wall and 
 - Optional trajectory preview
 - Ball-tracking camera and adjustable graphics quality
 - Live rebounds: shoot again from wherever the ball stops
+- Instant re-kicks while wall, post, and target-block rebounds are still moving
+- Adjustable goal width plus walls of 1–25 players with custom height
+- Top-corner mode turns the rest of the goal into a physical rebound surface
 - Pause menu, scoring, streaks, and top-corner challenges
 
 ## Controls

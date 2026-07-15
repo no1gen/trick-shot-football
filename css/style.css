@@ -73,6 +73,12 @@ canvas#game.smooth-render { image-rendering: auto; }
   letter-spacing: 2px;
 }
 
+#menu {
+  gap: clamp(5px, 1.6vh, 14px);
+  overflow-y: auto;
+  padding-block: 10px;
+}
+
 .title {
   color: var(--hud);
   font-size: clamp(18px, 3.5vw, 34px);
@@ -211,6 +217,8 @@ button:focus-visible { outline: 2px solid #ffffff; outline-offset: 3px; }
   color: var(--hud);
   animation: goalPop 0.4s ease-out;
 }
+
+#shot-banner.live { color: #40f080; }
 
 @keyframes goalPop {
   0% { transform: scale(0.3); opacity: 0; }

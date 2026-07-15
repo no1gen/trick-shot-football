@@ -1,6 +1,8 @@
 import { PHYSICS as P, WORLD, SCORING, DEFAULT_SETTINGS, DIFFICULTY } from './config.js';
 import { createBall, resetBall, stepBall, stepJuggle, maxCurveDeviation, wentAroundWall, shotVelocity } from './physics.js';
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 export const STATE = {
   MENU: 'menu',
   AIM: 'aim',           // прицеливание + чеканка
@@ -33,6 +35,7 @@ export class Game {
     this.easyAssistActive = false;
     this.kicksThisRound = 0;
     this.retryPromptTimer = 0;
+    this.reboundKickReady = false;
     this.pausedFrom = null;
   }
 
@@ -43,7 +46,7 @@ export class Game {
       z: s.distance * WORLD.wallZFraction,
       players: s.wallPlayers,
       halfWidth: (s.wallPlayers * WORLD.wallPlayerWidth) / 2,
-      height: WORLD.wallPlayerHeight,
+      height: s.wallHeight,
     } : null;
     this.env = {
       goalZ: s.distance,
@@ -83,6 +86,8 @@ export class Game {
   exitToMenu() {
     this.pausedFrom = null;
     this.aftertouchVelX = 0;
+    this.reboundKickReady = false;
+    this.retryPromptTimer = 0;
     resetBall(this.ball);
     this.state = STATE.MENU;
   }
@@ -117,13 +122,23 @@ export class Game {
     this.sound.trick(this.combo);
   }
 
+  canKick() {
+    return this.state === STATE.AIM || (this.state === STATE.FLIGHT && this.reboundKickReady);
+  }
+
   // --- Основной удар ---
   shoot(params) {
-    if (this.state !== STATE.AIM) return;
+    const airborneRekick = this.state === STATE.FLIGHT && this.reboundKickReady;
+    if (this.state !== STATE.AIM && !airborneRekick) return;
     const b = this.ball;
+    const carryVx = airborneRekick ? b.vx * P.rekickCarryX : b.vx;
+    const carryVy = airborneRekick ? clamp(b.vy * P.rekickCarryY, -1.6, 1.6) : 0;
+    const carryVz = airborneRekick ? clamp(b.vz * P.rekickCarryZ, -1.2, 0.8) : 0;
+    const carrySpin = b.spin;
     this.kicksThisRound++;
     this.retryPromptTimer = 0;
-    this.volley = b.y > 0.15; // удар с воздуха
+    this.reboundKickReady = false;
+    this.volley = airborneRekick || b.y > 0.15; // удар с воздуха / по летящему отскоку
     b.resting = false;
     b.trajectory = [{ x: b.x, y: b.y, z: b.z }];
     b.goalCrossing = null;
@@ -132,7 +147,7 @@ export class Game {
     const difficulty = this.settings.difficulty;
     const tuning = DIFFICULTY[difficulty];
     this.easyAssistActive = false;
-    b.vz = v.vz;
+    b.vz = v.vz + carryVz;
 
     // EASY: помощь срабатывает в момент удара и лишь частично подправляет
     // начальный импульс. После этого никакого скрытого самонаведения нет.
@@ -146,8 +161,8 @@ export class Game {
         ? WORLD.goalHeight - WORLD.topCornerY * 0.5
         : 0.68 + Math.random() * 0.82;
       const travelTime = Math.max(0.35, (this.env.goalZ - b.z) / Math.max(5, b.vz));
-      const rawVx = b.vx + v.vx;
-      const rawVy = v.vy;
+      const rawVx = carryVx + v.vx;
+      const rawVy = v.vy + carryVy;
       const idealVx = (targetX - b.x) / travelTime;
       const idealVy = (targetY - b.y + 0.5 * P.gravity * travelTime * travelTime) / travelTime;
       const blend = cornerMode ? 0.36 : 0.3;
@@ -172,11 +187,11 @@ export class Game {
       const hardHeightFactor = difficulty === 'hard'
         ? 1 + Math.max(-0.08, Math.min(0.12, (params.dirY - 0.52) * 0.22))
         : 1;
-      b.vy = v.vy * hardHeightFactor;
-      b.vx += v.vx * hardSideFactor; // дрейф от трюков сохраняется
+      b.vy = v.vy * hardHeightFactor + carryVy;
+      b.vx = carryVx + v.vx * hardSideFactor;
     }
     const spinFactor = difficulty === 'easy' && this.easyAssistActive ? 0.82 : difficulty === 'hard' ? 1.08 : 1;
-    b.spin = Math.max(-P.maxSpin, Math.min(P.maxSpin, (v.spin + b.spin * 0.6) * spinFactor)); // закрутка из воздуха переносится в удар
+    b.spin = Math.max(-P.maxSpin, Math.min(P.maxSpin, (v.spin + carrySpin * 0.6) * spinFactor)); // закрутка из воздуха переносится в удар
     b.spinPhase = 0;
     b.onFire = params.power >= P.maxPower * P.fireThreshold;
     this.flightTime = 0;
@@ -188,9 +203,11 @@ export class Game {
   // --- Тик (dt фиксированный) ---
   update(dt) {
     const b = this.ball;
+    if (this.state === STATE.AIM || this.state === STATE.FLIGHT) {
+      this.retryPromptTimer = Math.max(0, this.retryPromptTimer - dt);
+    }
 
     if (this.state === STATE.AIM) {
-      this.retryPromptTimer = Math.max(0, this.retryPromptTimer - dt);
       stepJuggle(b, dt);
       // Мяч упал и лежит → комбо сгорает
       if (b.y <= 0 && b.vy === 0 && this.combo > 0 && this._wasAirborne) {
@@ -214,7 +231,8 @@ export class Game {
       b.spinPhase = (b.spinPhase || 0) + b.spin * dt * 0.12 + b.vz * dt * 0.5;
       const event = stepBall(b, dt, this.env);
       if (event === 'post') this.sound.post();
-      if (event === 'wall') this.sound.wall();
+      if (event === 'wall' || event === 'targetBlock') this.sound.wall();
+      if (event === 'post' || event === 'wall' || event === 'targetBlock') this.armLiveRebound();
       if (event === 'goal' || event === 'topCorner') {
         this.finishShot(event === 'topCorner');
       } else if (event === 'miss' || event === 'out') {
@@ -232,6 +250,11 @@ export class Game {
     }
   }
 
+  armLiveRebound() {
+    this.reboundKickReady = true;
+    this.retryPromptTimer = 1.8;
+  }
+
   // Отскок или слабый удар не заканчивают розыгрыш. Если мяч остался в
   // пределах поля, игрок бьёт снова прямо с той точки, где он остановился.
   prepareRetry() {
@@ -246,6 +269,7 @@ export class Game {
     this.aftertouchVelX = 0;
     this.flightTime = 0;
     this.easyAssistActive = false;
+    this.reboundKickReady = false;
     this.retryPromptTimer = 1.6;
     this.state = STATE.AIM;
   }
@@ -276,6 +300,7 @@ export class Game {
 
   finishShot(topCorner) {
     const b = this.ball;
+    this.reboundKickReady = false;
     const scored = topCorner !== null;
     let points = 0;
     let details = null;
@@ -328,6 +353,7 @@ export class Game {
     this.easyAssistActive = false;
     this.kicksThisRound = 0;
     this.retryPromptTimer = 0;
+    this.reboundKickReady = false;
     if (this.shotIndex >= SCORING.shotsPerSession) {
       this.state = STATE.SESSION_RESULT;
       this.saveHighScore();

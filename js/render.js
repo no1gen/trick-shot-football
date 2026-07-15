@@ -18,12 +18,12 @@ export function ppm(z) {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-// Кадрируем сразу два объекта: мяч и ворота. Вес по перспективному масштабу
+// Кадрируем мяч, ворота и настраиваемую стенку. Вес по перспективному масштабу
 // даёт ощущение поворота камеры к воротам, а динамический zoom спасает высокие
 // и широкие мячи без скачков горизонта.
 export function trackingCameraTarget(ball, env) {
   const targetZ = ball.z < 0
-    ? clamp(ball.z * 0.65, -WORLD.fieldBack + 1, 0)
+    ? clamp(ball.z * 0.9, -WORLD.fieldBack + 1, 0)
     : clamp(ball.z * 0.34, 0, env.goalZ * 0.36);
   const rawScale = z => CAM.focal / Math.max(0.75, z - targetZ + CAM.back);
   const ballScale = rawScale(ball.z);
@@ -33,7 +33,11 @@ export function trackingCameraTarget(ball, env) {
 
   const ballOffsetX = Math.abs((ball.x - targetX) * ballScale) + WORLD.ballRadius * ballScale;
   const goalOffsetX = Math.abs(targetX * goalScale) + env.goalHalfWidth * goalScale;
-  const horizontalExtent = Math.max(ballOffsetX, goalOffsetX, 1);
+  const wallScale = env.wall ? rawScale(env.wall.z) : 0;
+  const wallOffsetX = env.wall
+    ? Math.abs(targetX * wallScale) + (env.wall.halfWidth + WORLD.ballRadius) * wallScale
+    : 0;
+  const horizontalExtent = Math.max(ballOffsetX, goalOffsetX, wallOffsetX, 1);
   let zoom = Math.min(1, (SCREEN.w / 2 - 24) / horizontalExtent);
 
   const topRoom = CAM.horizonY - 20;
@@ -43,13 +47,16 @@ export function trackingCameraTarget(ball, env) {
     targetY * goalScale,
     (targetY - WORLD.goalHeight) * goalScale,
   ];
+  if (env.wall) {
+    verticalOffsets.push(targetY * wallScale, (targetY - env.wall.height) * wallScale);
+  }
   for (const offset of verticalOffsets) {
     if (offset < -0.001) zoom = Math.min(zoom, topRoom / -offset);
     else if (offset > 0.001) zoom = Math.min(zoom, bottomRoom / offset);
   }
 
   // Небольшой запас компенсирует сглаживание при резком отскоке.
-  return { x: targetX, y: targetY, z: targetZ, zoom: clamp(zoom * 0.94, 0.34, 1) };
+  return { x: targetX, y: targetY, z: targetZ, zoom: clamp(zoom * 0.94, 0.26, 1) };
 }
 
 // Мировая точка (x вбок, y вверх, z вглубь) → экран
@@ -158,9 +165,11 @@ export class Renderer {
 
     // Полосы газона по глубине
     const nearZ = camera.z - CAM.back + 0.5;
-    for (let i = 0; i < 10; i++) {
-      const z0 = env.goalZ + 4 - i * (env.goalZ + 8) / 10;
-      const z1 = z0 - (env.goalZ + 8) / 20;
+    const farFieldZ = env.goalZ + 4;
+    const fieldDepth = farFieldZ + WORLD.fieldBack + 4;
+    for (let i = 0; i < 18; i++) {
+      const z0 = farFieldZ - i * fieldDepth / 18;
+      const z1 = z0 - fieldDepth / 36;
       if (z1 < nearZ) continue;
       const y0 = project(0, 0, Math.max(z0, nearZ)).y;
       const y1 = project(0, 0, Math.max(z1, nearZ)).y;
@@ -181,8 +190,9 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(232,232,216,0.34)';
     ctx.lineWidth = 1;
     for (const side of [-1, 1]) {
-      const near = project(side * 10, 0, Math.max(0, nearZ + 0.2));
-      const far = project(side * 6, 0, env.goalZ);
+      const near = project(side * Math.min(WORLD.fieldHalfWidth, 14), 0, Math.max(-WORLD.fieldBack, nearZ + 0.2));
+      const farX = Math.min(WORLD.fieldHalfWidth, Math.max(6, env.goalHalfWidth + 2));
+      const far = project(side * farX, 0, env.goalZ);
       ctx.beginPath();
       ctx.moveTo(near.x, near.y);
       ctx.lineTo(far.x, far.y);
@@ -224,6 +234,30 @@ export class Renderer {
     ctx.beginPath(); ctx.moveTo(tl.x, tl.y); ctx.lineTo(btl.x, btl.y); ctx.lineTo(bbl.x, bbl.y); ctx.lineTo(bl.x, bl.y); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(tr.x, tr.y); ctx.lineTo(btr.x, btr.y); ctx.lineTo(bbr.x, bbr.y); ctx.lineTo(br.x, br.y); ctx.stroke();
     ctx.globalAlpha = 1;
+
+    // В режиме «только девятка» весь остальной створ — видимая отбойная
+    // поверхность. Две верхние угловые зоны остаются открытыми.
+    if (env.targetMode === 'corners') {
+      const cornerW = WORLD.topCornerX * env.goalScale;
+      const cornerH = WORLD.topCornerY;
+      const drawBlockPanel = (x0, y0, x1, y1) => {
+        if (x1 <= x0 || y1 <= y0) return;
+        const a = project(x0, y1, z);
+        const b = project(x1, y1, z);
+        const c = project(x1, y0, z);
+        const d = project(x0, y0, z);
+        ctx.fillStyle = 'rgba(82,20,30,0.82)';
+        ctx.strokeStyle = 'rgba(248,92,92,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      };
+      drawBlockPanel(-hw, 0, hw, gh - cornerH);
+      drawBlockPanel(-hw + cornerW, gh - cornerH, hw - cornerW, gh);
+    }
 
     // Объёмная рама: тёмная подложка + светлая труба.
     const drawFrame = (color, width) => {

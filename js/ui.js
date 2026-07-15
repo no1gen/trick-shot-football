@@ -40,7 +40,7 @@ export class UI {
     const goalSizeVal = $('opt-goal-size-val');
     goalSize.addEventListener('input', () => {
       g.goalScale = parseFloat(goalSize.value);
-      goalSizeVal.textContent = g.goalScale <= 0.6 ? 'TINY' : g.goalScale <= 0.8 ? 'SMALL' : g.goalScale <= 1.0 ? 'NORMAL' : 'BIG';
+      goalSizeVal.textContent = g.goalScale.toFixed(2) + 'X';
     });
 
     const setDifficulty = difficulty => {
@@ -62,6 +62,13 @@ export class UI {
     wallN.addEventListener('input', () => {
       g.wallPlayers = parseInt(wallN.value, 10);
       wallNVal.textContent = g.wallPlayers;
+    });
+
+    const wallHeight = $('opt-wall-height');
+    const wallHeightVal = $('opt-wall-height-val');
+    wallHeight.addEventListener('input', () => {
+      g.wallHeight = parseFloat(wallHeight.value);
+      wallHeightVal.textContent = g.wallHeight.toFixed(2) + 'm';
     });
 
     const dist = $('opt-distance');
@@ -102,6 +109,7 @@ export class UI {
     wt.textContent = g.wallEnabled ? 'WALL: ON' : 'WALL: OFF';
     wt.classList.toggle('active', g.wallEnabled);
     document.getElementById('wall-n-row').style.opacity = g.wallEnabled ? '1' : '0.35';
+    document.getElementById('wall-height-row').style.opacity = g.wallEnabled ? '1' : '0.35';
     const buttons = [document.getElementById('opt-trajectory'), this.trajectoryToggle];
     for (const button of buttons) {
       button.textContent = g.trajectoryEnabled ? 'TRAJECTORY: ON' : 'TRAJECTORY: OFF';
@@ -182,7 +190,8 @@ export class UI {
 
     if (inGame) {
       document.getElementById('hud-score').textContent = 'SCORE ' + g.totalScore;
-      const kickNumber = g.state === STATE.AIM && g.kicksThisRound > 0
+      const awaitingKick = (g.state === STATE.AIM && g.kicksThisRound > 0) || g.reboundKickReady;
+      const kickNumber = awaitingKick
         ? g.kicksThisRound + 1
         : g.kicksThisRound;
       const kickLabel = kickNumber > 1 ? ' · KICK ' + kickNumber : '';
@@ -206,13 +215,19 @@ export class UI {
         if (s.fire) text += ' 🔥';
       } else text = 'MISS — ' + (s.missReason || 'TRY AGAIN');
       this.shotBanner.textContent = text;
-      this.shotBanner.classList.remove('hidden');
+      this.shotBanner.classList.remove('hidden', 'live');
       this.shotBanner.classList.toggle('goal', s.points > 0);
+    } else if (g.state === STATE.FLIGHT && g.reboundKickReady && g.retryPromptTimer > 0) {
+      this.shotBanner.textContent = 'LIVE REBOUND — KICK NOW!';
+      this.shotBanner.classList.remove('hidden', 'goal');
+      this.shotBanner.classList.add('live');
     } else if (g.state === STATE.AIM && g.retryPromptTimer > 0) {
       this.shotBanner.textContent = 'BALL STILL LIVE — KICK AGAIN!';
       this.shotBanner.classList.remove('hidden', 'goal');
+      this.shotBanner.classList.add('live');
     } else {
       this.shotBanner.classList.add('hidden');
+      this.shotBanner.classList.remove('live');
     }
 
     // Экран итогов сессии

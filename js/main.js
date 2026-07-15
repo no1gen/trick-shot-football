@@ -36,8 +36,8 @@ const input = new Input(canvas, {
   onShot: params => game.shoot(params),
   onTrick: params => game.trick(params),
   onJuggleTap: () => game.juggleTap(),
-  canAim: () => game.state === STATE.AIM,
-  isTrickMode: () => spaceHeld,
+  canAim: () => game.canKick(),
+  isTrickMode: () => spaceHeld && game.state === STATE.AIM,
 });
 
 ui = new UI(game, () => {
@@ -116,7 +116,7 @@ function frame(now) {
   camera.y = Math.max(0.8, Math.min(24, camera.y));
   const cameraChanged = !newShotStarted && updateCameraTracking(DT, visualState, env);
 
-  const drag = game.state === STATE.AIM ? input.getDragState() : null;
+  const drag = game.canKick() ? input.getDragState() : null;
   const activeMotion = visualState === STATE.FLIGHT || game.ball.y > 0.02 || !!drag || keys.size > 0 || cameraChanged;
   const idleInterval = game.settings.quality >= 5 ? 80 : 100;
   // Если конкретный компьютер не успевает рисовать кадр дешевле 12 мс,
@@ -129,7 +129,7 @@ function frame(now) {
       env,
       drag,
       preview: game.settings.trajectoryEnabled && drag && drag.params.power >= 3
-        ? simulatePreview(drag.params, env, game.ball) : null,
+        ? simulatePreview(drag.params, env, game.ball, game.reboundKickReady) : null,
       trickMode: spaceHeld && game.state === STATE.AIM,
       aftertouch: game.state === STATE.FLIGHT && game.flightTime < P.aftertouchWindow,
       showTrajectory: game.settings.trajectoryEnabled
