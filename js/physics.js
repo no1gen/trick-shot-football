@@ -45,20 +45,39 @@ export function shotVelocity({ power, dirX, dirY, spin }) {
   };
 }
 
+// Удар по нарисованному пути: конечная точка задаёт направление и высоту,
+// изгиб — spin. Скорость рассчитывается баллистически, но дальнейший полёт
+// всё равно проходит через обычные drag, Magnus, гравитацию и столкновения.
+export function pathShotVelocity({ power, targetX, targetY, spin }, origin, env) {
+  const start = origin || { x: 0, y: 0, z: 0 };
+  const shotSpeed = clamp(power, P.minPower, P.maxPower);
+  const distance = Math.max(0.5, env.goalZ - start.z);
+  const travelTime = clamp(distance / Math.max(8, shotSpeed * 0.82), 0.38, 2.4);
+  const vz = (distance / travelTime) * 1.055;
+  const magnusAccel = spin * P.magnus * vz;
+  return {
+    vx: (targetX - start.x) / travelTime - magnusAccel * travelTime * 0.52,
+    vy: (targetY - start.y + 0.5 * P.gravity * travelTime * travelTime) / travelTime,
+    vz,
+    spin: clamp(spin, -P.maxSpin, P.maxSpin),
+  };
+}
+
 // Превью траектории при прицеливании: симулируем полёт на клоне мяча
 // до previewFraction дистанции (дальше игрок должен угадывать сам).
 export function simulatePreview(params, env, origin, airborneRekick = false) {
-  const v = shotVelocity(params);
   const start = origin || { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spin: 0 };
+  const v = params.pathShot ? pathShotVelocity(params, start, env) : shotVelocity(params);
   const carryVx = airborneRekick ? (start.vx || 0) * P.rekickCarryX : (start.vx || 0);
   const carryVy = airborneRekick ? clamp((start.vy || 0) * P.rekickCarryY, -1.6, 1.6) : 0;
   const carryVz = airborneRekick ? clamp((start.vz || 0) * P.rekickCarryZ, -1.2, 0.8) : 0;
+  const pathShot = !!params.pathShot;
   const clone = {
     x: start.x, y: start.y, z: start.z,
-    vx: carryVx + v.vx,
-    vy: v.vy + carryVy,
-    vz: v.vz + carryVz,
-    spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, v.spin + (start.spin || 0) * 0.6)),
+    vx: pathShot ? v.vx : carryVx + v.vx,
+    vy: pathShot ? v.vy : v.vy + carryVy,
+    vz: pathShot ? v.vz : v.vz + carryVz,
+    spin: pathShot ? v.spin : Math.max(-P.maxSpin, Math.min(P.maxSpin, v.spin + (start.spin || 0) * 0.6)),
     resting: false,
     trajectory: [{ x: start.x, y: start.y, z: start.z }],
     goalCrossing: null,

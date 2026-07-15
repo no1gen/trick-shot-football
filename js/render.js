@@ -69,6 +69,17 @@ export function project(x, y, z) {
   };
 }
 
+// Экранная точка на плоскости заданной глубины -> координаты мира.
+// Для рисованного удара конечная точка жеста проецируется прямо в створ ворот.
+export function unprojectAtZ(screenX, screenY, z) {
+  const s = ppm(z);
+  return {
+    x: camera.x + (screenX - SCREEN.w / 2) / s,
+    y: camera.y - (screenY - CAM.horizonY) / s,
+    z,
+  };
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -427,6 +438,10 @@ export class Renderer {
   }
 
   drawAim(ctx, drag, ball, preview) {
+    if (drag.mode === 'path') {
+      this.drawPathAim(ctx, drag, ball, preview);
+      return;
+    }
     const bp = project(ball.x, ball.y, ball.z);
 
     // Стабильный прогноз: одна чистая линия без отскоков и «синих зигзагов».
@@ -497,5 +512,77 @@ export class Renderer {
         ctx.fill();
       }
     }
+  }
+
+  drawPathAim(ctx, drag, ball, preview) {
+    const bp = project(ball.x, ball.y, ball.z);
+
+    // Голубая линия — только физический прогноз. На сложных режимах она
+    // обрывается раньше, поэтому нарисованный путь не становится автоприцелом.
+    if (preview && preview.length > 1) {
+      const points = preview
+        .filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y) && Number.isFinite(pt.z))
+        .map(pt => project(pt.x, pt.y, pt.z));
+      if (points.length > 1) {
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.58)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(72,204,248,0.92)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Зелёно-белый след — именно жест игрока. Он остаётся читаемым поверх
+    // синего физического прогноза и визуально показывает величину закрутки.
+    const trail = drag.trail || [];
+    if (trail.length > 1) {
+      const strokeTrail = (color, width) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      };
+      strokeTrail('rgba(0,0,0,0.68)', 5);
+      strokeTrail('rgba(72,240,144,0.96)', 2.5);
+      strokeTrail('rgba(238,255,244,0.82)', 0.75);
+    }
+
+    const end = drag.current;
+    ctx.strokeStyle = 'rgba(224,255,238,0.95)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, 5, 0, Math.PI * 2);
+    ctx.moveTo(end.x - 8, end.y); ctx.lineTo(end.x + 8, end.y);
+    ctx.moveTo(end.x, end.y - 8); ctx.lineTo(end.x, end.y + 8);
+    ctx.stroke();
+
+    const power = Math.min(drag.params.power, P.maxPower) / P.maxPower;
+    ctx.fillStyle = 'rgba(16,24,20,0.84)';
+    ctx.fillRect(bp.x - 22, bp.y + 14, 44, 5);
+    ctx.fillStyle = power > P.fireThreshold ? '#ff7048' : '#48f090';
+    ctx.fillRect(bp.x - 21, bp.y + 15, 42 * power, 3);
+
+    if (Math.abs(drag.spin) > 4) {
+      const direction = Math.sign(drag.spin) > 0 ? 'RIGHT CURVE' : 'LEFT CURVE';
+      ctx.fillStyle = C.spinArrow;
+      ctx.font = '7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(direction, bp.x, bp.y - 15);
+    }
+
+    ctx.fillStyle = 'rgba(232,255,240,0.92)';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('DRAW TO GOAL · BEND THE LINE TO CURVE', SCREEN.w / 2, SCREEN.h - 10);
   }
 }

@@ -9,11 +9,15 @@ export class Input {
     this.dragging = false;
     this.dragStart = null;   // {x, y} внутренние координаты канваса
     this.dragCurrent = null;
+    this.dragMode = 'flick';
     this.trail = [];         // [{x, y, t}] последние позиции мыши
     // canAim() спрашиваем в момент события, а не по флагу из кадра —
     // rAF может стоять на паузе (фоновая вкладка), флаг будет протухшим
     this.canAim = callbacks.canAim || (() => true);
     this.isTrickMode = callbacks.isTrickMode || (() => false);
+    this.getShotMode = callbacks.getShotMode || (() => 'flick');
+    this.getBallScreen = callbacks.getBallScreen || (() => null);
+    this.mapPathGesture = callbacks.mapPathGesture || (gesture => gesture);
     // Глобальный буфер движения мыши — для aftertouch во время полёта
     this.moves = [];
     window.addEventListener('mousemove', e => {
@@ -42,6 +46,18 @@ export class Input {
   onDown(e) {
     if (!this.canAim()) return;
     const p = this.toCanvas(e);
+    const pathMode = !this.isTrickMode() && this.getShotMode() === 'path';
+    if (pathMode) {
+      const ballPoint = this.getBallScreen();
+      if (!ballPoint || Math.hypot(p.x - ballPoint.x, p.y - ballPoint.y) > P.pathStartRadius) return;
+      this.dragMode = 'path';
+      this.dragging = true;
+      this.dragStart = { x: ballPoint.x, y: ballPoint.y };
+      this.dragCurrent = { ...this.dragStart };
+      this.trail = [{ ...this.dragStart, t: performance.now() }];
+      return;
+    }
+    this.dragMode = 'flick';
     this.dragging = true;
     this.dragStart = p;
     this.dragCurrent = p;
@@ -59,24 +75,30 @@ export class Input {
   onUp(e) {
     if (!this.dragging) return;
     this.dragging = false;
-    const end = e ? this.toCanvas(e) : this.dragCurrent;
+    const end = this.dragMode === 'path' ? this.dragCurrent : (e ? this.toCanvas(e) : this.dragCurrent);
     const start = this.dragStart;
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const len = Math.hypot(dx, dy);
 
-    if (len < 8) {
+    const pathLength = this.dragMode === 'path' ? this.getPathLength() : len;
+    const pathForward = this.dragMode === 'path' ? start.y - end.y : 0;
+    if ((this.dragMode === 'path' && (pathLength < P.pathMinLength || pathForward < 10))
+      || (this.dragMode !== 'path' && len < 8)) {
       // Короткий тап/флик = чеканка
       this.cb.onJuggleTap && this.cb.onJuggleTap();
       return;
     }
 
-    const params = this.computeShotParams(end);
-    if (this.isTrickMode()) {
+    const params = this.dragMode === 'path'
+      ? this.computePathShotParams(end)
+      : this.computeShotParams(end);
+    if (this.dragMode !== 'path' && this.isTrickMode()) {
       this.cb.onTrick && this.cb.onTrick(params);
     } else {
       this.cb.onShot && this.cb.onShot(params);
     }
+    if (this.dragMode === 'path') this.moves = [];
   }
 
   // Скорость мыши по горизонтали за последние ~80мс (px/ms) — aftertouch
@@ -93,6 +115,7 @@ export class Input {
     this.dragging = false;
     this.dragStart = null;
     this.dragCurrent = null;
+    this.dragMode = 'flick';
     this.trail = [];
     this.moves = [];
   }
@@ -122,6 +145,51 @@ export class Input {
       dirY: Math.max(0, Math.min(1, pullY / P.aimDragY)),
       spin: this.computeSpin(),
     };
+  }
+
+  getPathLength() {
+    let length = 0;
+    for (let i = 1; i < this.trail.length; i++) {
+      length += Math.hypot(
+        this.trail[i].x - this.trail[i - 1].x,
+        this.trail[i].y - this.trail[i - 1].y,
+      );
+    }
+    return length;
+  }
+
+  computePathCurve(end) {
+    const points = this.trail;
+    if (points.length < 3) return 0;
+    const start = this.dragStart;
+    let weighted = 0;
+    let weightTotal = 0;
+    for (let i = 1; i < points.length - 1; i++) {
+      const t = i / (points.length - 1);
+      const expectedX = start.x + (end.x - start.x) * t;
+      const weight = Math.sin(Math.PI * t);
+      weighted += (points[i].x - expectedX) * weight;
+      weightTotal += weight;
+    }
+    return weightTotal > 0 ? weighted / weightTotal : 0;
+  }
+
+  computePathShotParams(end) {
+    const pathLength = this.getPathLength();
+    const flickSpeed = this.getFlickSpeed();
+    const curvePx = this.computePathCurve(end);
+    const power = Math.max(P.minPower, Math.min(P.maxPower,
+      P.pathPowerBase + pathLength * P.pathPowerScale + flickSpeed * P.pathFlickPowerScale));
+    const gesture = {
+      pathShot: true,
+      power,
+      start: { ...this.dragStart },
+      end: { ...end },
+      pathLength,
+      curvePx,
+      spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, curvePx * P.pathSpinPerPixel)),
+    };
+    return { ...gesture, ...this.mapPathGesture(gesture) };
   }
 
   // Скорость движения мыши в конце оттяжки (px/ms)
@@ -166,12 +234,16 @@ export class Input {
   // Для отрисовки прицела
   getDragState() {
     if (!this.dragging || !this.dragStart) return null;
+    const params = this.dragMode === 'path'
+      ? this.computePathShotParams(this.dragCurrent)
+      : this.computeShotParams(this.dragCurrent);
     return {
       start: this.dragStart,
       current: this.dragCurrent,
       trail: this.trail,
-      spin: this.computeSpin(),
-      params: this.computeShotParams(this.dragCurrent),
+      mode: this.dragMode,
+      spin: params.spin,
+      params,
     };
   }
 }

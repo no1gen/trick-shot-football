@@ -1,7 +1,7 @@
 import { SCREEN, WORLD, PHYSICS as P } from './config.js';
 import { Game, STATE } from './game.js';
 import { simulatePreview } from './physics.js';
-import { Renderer, camera, resetCamera, trackingCameraTarget } from './render.js';
+import { Renderer, camera, resetCamera, trackingCameraTarget, project, unprojectAtZ } from './render.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { UI } from './ui.js';
@@ -14,6 +14,19 @@ const sound = new Sound();
 const game = new Game(sound);
 const renderer = new Renderer(canvas);
 let ui;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+function mapPathGesture(gesture) {
+  const env = game.env;
+  if (!env) return gesture;
+  const target = unprojectAtZ(gesture.end.x, gesture.end.y, env.goalZ);
+  const maxTargetX = Math.max(8, env.goalHalfWidth * 1.7);
+  return {
+    targetX: clamp(target.x, -maxTargetX, maxTargetX),
+    targetY: clamp(target.y, 0.08, WORLD.goalHeight + 2.8),
+    spin: clamp(gesture.curvePx * P.pathSpinPerPixel, -P.maxSpin, P.maxSpin),
+  };
+}
 
 // Клавиатура: стрелки — камера, пробел — режим трюков
 const keys = new Set();
@@ -38,6 +51,12 @@ const input = new Input(canvas, {
   onJuggleTap: () => game.juggleTap(),
   canAim: () => game.canKick(),
   isTrickMode: () => spaceHeld && game.state === STATE.AIM,
+  getShotMode: () => game.usesPathShot() ? 'path' : 'flick',
+  getBallScreen: () => {
+    const point = project(game.ball.x, game.ball.y, game.ball.z);
+    return { x: point.x, y: point.y };
+  },
+  mapPathGesture,
 });
 
 ui = new UI(game, () => {

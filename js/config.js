@@ -15,6 +15,12 @@ export const PHYSICS = {
   maxPower: 34,          // мощный удар (м/с)
   shotSideFactor: 0.50,  // полный боковой жест позволяет бить с далёкого фланга
   shotSideForwardLoss: 0.22, // диагональный удар честно теряет часть скорости вперёд
+  pathStartRadius: 32,   // насколько близко к мячу можно начать рисовать путь (px канваса)
+  pathMinLength: 18,     // короткий жест остаётся чеканкой, а не случайным ударом
+  pathPowerBase: 16,     // базовая сила нарисованного удара
+  pathPowerScale: 0.105, // длинная линия добавляет силу
+  pathFlickPowerScale: 4.5, // быстрый финал линии добавляет импульс
+  pathSpinPerPixel: 4.8, // изгиб нарисованной линии → вращение мяча
   powerScale: 0.29,      // перевод пикселей оттяжки в силу
   flickPowerScale: 14.5, // сила от скорости флика (px/ms → м/с)
   aimDragX: 122,         // более широкое рабочее окно бокового прицела
@@ -116,16 +122,28 @@ export const DIFFICULTY = {
     assistChance: 0.6,
     previewFraction: 0.84,
     aftertouchFactor: 1.2,
+    pathErrorX: 0.16,
+    pathErrorY: 0.12,
+    pathPowerVariance: 0.025,
+    pathSpinFactor: 0.92,
   },
   normal: {
     assistChance: 0,
     previewFraction: PHYSICS.previewFraction,
     aftertouchFactor: 1,
+    pathErrorX: 0.38,
+    pathErrorY: 0.25,
+    pathPowerVariance: 0.06,
+    pathSpinFactor: 1,
   },
   hard: {
     assistChance: 0,
     previewFraction: 0.55,
     aftertouchFactor: 0.78,
+    pathErrorX: 0.8,
+    pathErrorY: 0.48,
+    pathPowerVariance: 0.12,
+    pathSpinFactor: 1.15,
   },
 };
 

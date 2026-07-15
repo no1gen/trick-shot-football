@@ -1,5 +1,5 @@
 import { PHYSICS as P, WORLD, SCORING, DEFAULT_SETTINGS, DIFFICULTY } from './config.js';
-import { createBall, resetBall, stepBall, stepJuggle, maxCurveDeviation, wentAroundWall, shotVelocity } from './physics.js';
+import { createBall, resetBall, stepBall, stepJuggle, maxCurveDeviation, wentAroundWall, shotVelocity, pathShotVelocity } from './physics.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -126,8 +126,17 @@ export class Game {
     return this.state === STATE.AIM || (this.state === STATE.FLIGHT && this.reboundKickReady);
   }
 
+  usesPathShot() {
+    const b = this.ball;
+    return this.state === STATE.AIM
+      && !this.reboundKickReady
+      && b.y <= 0.035
+      && Math.abs(b.vy) < 0.18;
+  }
+
   // --- Основной удар ---
   shoot(params) {
+    if (params.pathShot) return this.shootPath(params);
     const airborneRekick = this.state === STATE.FLIGHT && this.reboundKickReady;
     if (this.state !== STATE.AIM && !airborneRekick) return;
     const b = this.ball;
@@ -192,6 +201,41 @@ export class Game {
     }
     const spinFactor = difficulty === 'easy' && this.easyAssistActive ? 0.82 : difficulty === 'hard' ? 1.08 : 1;
     b.spin = Math.max(-P.maxSpin, Math.min(P.maxSpin, (v.spin + carrySpin * 0.6) * spinFactor)); // закрутка из воздуха переносится в удар
+    b.spinPhase = 0;
+    b.onFire = params.power >= P.maxPower * P.fireThreshold;
+    this.flightTime = 0;
+    this.state = STATE.FLIGHT;
+    if (b.onFire) this.sound.fireKick();
+    else this.sound.kick(params.power / P.maxPower);
+  }
+
+  shootPath(params) {
+    if (!this.usesPathShot()) return;
+    const b = this.ball;
+    const tuning = DIFFICULTY[this.settings.difficulty];
+    const signedRandom = () => Math.random() * 2 - 1;
+    const actual = {
+      ...params,
+      targetX: params.targetX + signedRandom() * tuning.pathErrorX,
+      targetY: Math.max(0.08, params.targetY + signedRandom() * tuning.pathErrorY),
+      power: params.power * (1 + signedRandom() * tuning.pathPowerVariance),
+      spin: params.spin * tuning.pathSpinFactor * (1 + signedRandom() * 0.08),
+    };
+    const v = pathShotVelocity(actual, b, this.env);
+
+    this.kicksThisRound++;
+    this.retryPromptTimer = 0;
+    this.reboundKickReady = false;
+    this.volley = false;
+    this.easyAssistActive = false;
+    b.resting = false;
+    b.trajectory = [{ x: b.x, y: b.y, z: b.z }];
+    b.goalCrossing = null;
+    b.outReason = null;
+    b.vx = v.vx;
+    b.vy = v.vy;
+    b.vz = v.vz;
+    b.spin = v.spin;
     b.spinPhase = 0;
     b.onFire = params.power >= P.maxPower * P.fireThreshold;
     this.flightTime = 0;
