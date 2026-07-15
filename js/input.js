@@ -200,8 +200,8 @@ export class Input {
       pathLength,
       drawSpeed,
       curvePx,
-      spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, curvePx * P.pathSpinPerPixel)),
-      trail: this.trail.map(point => ({ x: point.x, y: point.y })),
+      // Линия, выгнутая вправо, стартует вправо и затем должна завернуть влево.
+      spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, -curvePx * P.pathSpinPerPixel)),
     };
     return { ...gesture, ...this.mapPathGesture(gesture) };
   }

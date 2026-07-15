@@ -116,9 +116,6 @@ export class Renderer {
     this.drawSky(ctx);
     this.drawField(ctx, state.env);
     this.drawGoal(ctx, state.env);
-    if (state.ball.guidePath?.length > 1 && state.ball.guideStrength > 0) {
-      this.drawPlayerGuide(ctx, state.ball.guidePath);
-    }
 
     const ball = state.ball;
     const wall = state.env.wall;
@@ -440,22 +437,6 @@ export class Renderer {
     }
   }
 
-  drawPlayerGuide(ctx, path) {
-    const points = path.map(point => project(point.x, point.y, point.z));
-    if (points.length < 2) return;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(0,0,0,0.42)';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(72,240,144,0.72)';
-    ctx.lineWidth = 1.45;
-    ctx.stroke();
-  }
-
   drawAim(ctx, drag, ball) {
     if (drag.mode === 'path') {
       this.drawPathAim(ctx, drag, ball);
@@ -510,9 +491,8 @@ export class Renderer {
   drawPathAim(ctx, drag, ball) {
     const bp = project(ball.x, ball.y, ball.z);
 
-    // Единственная линия прицеливания — сам жест игрока. Отдельного
-    // предсказателя больше нет: после отпускания этот рисунок становится
-    // физическим маршрутом мяча.
+    // Единственная линия прицеливания — сам жест игрока. Она задаёт стартовый
+    // импульс и spin, но после отпускания не ведёт мяч по рельсе.
     const trail = drag.trail || [];
     if (trail.length > 1) {
       const strokeTrail = (color, width) => {

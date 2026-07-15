@@ -20,7 +20,7 @@ export const PHYSICS = {
   pathPowerBase: 14,     // минимальная скорость медленно нарисованного удара
   pathDrawSpeedScale: 13, // средняя скорость рисования (px/ms) → скорость мяча
   pathSpinPerPixel: 4.8, // изгиб нарисованной линии → вращение мяча
-  pathGuideLookAhead: 1.25, // сколько метров маршрута физика видит перед мячом
+  pathMagnusScale: 5.5, // выраженный free-kick bend без ведения мяча по рельсе
   powerScale: 0.29,      // перевод пикселей оттяжки в силу
   flickPowerScale: 14.5, // сила от скорости флика (px/ms → м/с)
   aimDragX: 122,         // более широкое рабочее окно бокового прицела
@@ -120,29 +120,26 @@ export const DIFFICULTY = {
   easy: {
     assistChance: 0.6,
     aftertouchFactor: 1.2,
-    pathErrorX: 0.16,
-    pathErrorY: 0.12,
-    pathPowerVariance: 0.025,
-    pathSpinFactor: 0.92,
-    pathGuideStrength: 16,
+    pathErrorX: 0.08,
+    pathErrorY: 0.06,
+    pathAssist: 0.94,
+    pathSpinFactor: 0.96,
   },
   normal: {
     assistChance: 0,
     aftertouchFactor: 1,
-    pathErrorX: 0.38,
-    pathErrorY: 0.25,
-    pathPowerVariance: 0.06,
+    pathErrorX: 0.22,
+    pathErrorY: 0.16,
+    pathAssist: 0.76,
     pathSpinFactor: 1,
-    pathGuideStrength: 10,
   },
   hard: {
     assistChance: 0,
     aftertouchFactor: 0.78,
-    pathErrorX: 0.8,
-    pathErrorY: 0.48,
-    pathPowerVariance: 0.12,
-    pathSpinFactor: 1.15,
-    pathGuideStrength: 5.8,
+    pathErrorX: 0.5,
+    pathErrorY: 0.38,
+    pathAssist: 0.46,
+    pathSpinFactor: 1.04,
   },
 };
 

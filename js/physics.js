@@ -8,11 +8,9 @@ export function createBall() {
     x: 0, y: 0, z: 0,
     vx: 0, vy: 0, vz: 0,
     spin: 0,
+    magnusScale: 1,
     resting: true,
     trajectory: [],      // точки полёта для расчёта кривизны/отрисовки
-    guidePath: null,     // нарисованный игроком маршрут наземного удара
-    guideStrength: 0,
-    guideSpeed: 0,
     goalCrossing: null,  // где мяч пересёк плоскость ворот — для честной подсказки промаха
     outReason: null,
   };
@@ -22,13 +20,11 @@ export function resetBall(ball) {
   ball.x = 0; ball.y = 0; ball.z = 0;
   ball.vx = 0; ball.vy = 0; ball.vz = 0;
   ball.spin = 0;
+  ball.magnusScale = 1;
   ball.spinPhase = 0;
   ball.onFire = false;
   ball.resting = true;
   ball.trajectory = [];
-  ball.guidePath = null;
-  ball.guideStrength = 0;
-  ball.guideSpeed = 0;
   ball.goalCrossing = null;
   ball.outReason = null;
 }
@@ -50,80 +46,24 @@ export function shotVelocity({ power, dirX, dirY, spin }) {
   };
 }
 
-function samplePathAtZ(path, z) {
-  if (!path?.length) return null;
-  if (z <= path[0].z) return path[0];
-  for (let i = 1; i < path.length; i++) {
-    if (z <= path[i].z) {
-      const a = path[i - 1], b = path[i];
-      const span = Math.max(0.001, b.z - a.z);
-      const t = clamp((z - a.z) / span, 0, 1);
-      return {
-        x: a.x + (b.x - a.x) * t,
-        y: a.y + (b.y - a.y) * t,
-        z: a.z + (b.z - a.z) * t,
-      };
-    }
-  }
-  return path[path.length - 1];
-}
-
-// Начальный импульс направлен по первому участку рисунка. Дальше обычные
-// силы остаются активны, а мягкое физическое наведение следует всему пути.
-export function pathShotVelocity({ power, targetX, targetY, spin, guidePath }, origin, env) {
+// Рисунок задаёт только стартовый импульс. assist компенсирует часть падения
+// и будущего изгиба, но после удара мяч больше ничем не ведётся по линии.
+export function pathShotVelocity({ power, targetX, targetY, spin, assist = 0, magnusScale = 1 }, origin, env) {
   const start = origin || { x: 0, y: 0, z: 0 };
   const shotSpeed = clamp(power, P.minPower, P.maxPower);
-  if (guidePath?.length > 1) {
-    const firstTarget = samplePathAtZ(
-      guidePath,
-      Math.min(env.goalZ, start.z + P.pathGuideLookAhead * 1.35),
-    );
-    const dx = firstTarget.x - start.x;
-    const dy = firstTarget.y - start.y;
-    const dz = Math.max(0.1, firstTarget.z - start.z);
-    const length = Math.max(0.001, Math.hypot(dx, dy, dz));
-    return {
-      vx: shotSpeed * dx / length,
-      vy: shotSpeed * dy / length,
-      vz: shotSpeed * dz / length,
-      spin: clamp(spin, -P.maxSpin, P.maxSpin),
-    };
-  }
   const distance = Math.max(0.5, env.goalZ - start.z);
-  const travelTime = clamp(distance / Math.max(8, shotSpeed * 0.82), 0.38, 2.4);
-  const vz = (distance / travelTime) * 1.055;
-  const magnusAccel = spin * P.magnus * vz;
+  const vz = shotSpeed * 0.92;
+  const travelTime = clamp(distance / Math.max(7, vz), 0.3, 2.8);
+  const help = clamp(assist, 0, 1);
+  const magnusAccel = spin * P.magnus * magnusScale * vz;
   return {
-    vx: (targetX - start.x) / travelTime - magnusAccel * travelTime * 0.52,
-    vy: (targetY - start.y + 0.5 * P.gravity * travelTime * travelTime) / travelTime,
+    vx: (targetX - start.x) / travelTime
+      - magnusAccel * travelTime * 0.52 * help,
+    vy: (targetY - start.y) / travelTime
+      + 0.5 * P.gravity * travelTime * help,
     vz,
     spin: clamp(spin, -P.maxSpin, P.maxSpin),
   };
-}
-
-function applyPathGuide(ball, dt) {
-  const path = ball.guidePath;
-  if (!path?.length || ball.guideStrength <= 0 || ball.vz <= 0.1) return;
-  const last = path[path.length - 1];
-  if (ball.z >= last.z - 0.03) return;
-
-  const targetZ = Math.min(last.z, ball.z + P.pathGuideLookAhead);
-  const target = samplePathAtZ(path, targetZ);
-  if (!target) return;
-  const dx = target.x - ball.x;
-  const dy = target.y - ball.y;
-  const dz = Math.max(0.05, target.z - ball.z);
-  const distance = Math.max(0.001, Math.hypot(dx, dy, dz));
-  const currentSpeed = Math.hypot(ball.vx, ball.vy, ball.vz);
-  const desiredSpeed = Math.max(currentSpeed, ball.guideSpeed * 0.68, P.minPower * 0.6);
-  const lookTime = distance / Math.max(5, desiredSpeed);
-  const desiredVx = desiredSpeed * dx / distance;
-  const desiredVy = desiredSpeed * dy / distance + P.gravity * lookTime * 0.42;
-  const desiredVz = desiredSpeed * dz / distance;
-  const blend = 1 - Math.exp(-ball.guideStrength * dt);
-  ball.vx += (desiredVx - ball.vx) * blend;
-  ball.vy += (desiredVy - ball.vy) * blend;
-  ball.vz += (desiredVz - ball.vz) * blend;
 }
 
 // Один тик физики (dt в секундах, фиксированный 1/60).
@@ -135,19 +75,15 @@ export function stepBall(ball, dt, env) {
   const prevX = ball.x;
   const prevY = ball.y;
 
-  // Рисунок не телепортирует мяч по координатам. Он мягко поворачивает
-  // вектор скорости, поэтому гравитация, сопротивление, вращение и удары
-  // о препятствия продолжают работать как раньше.
-  applyPathGuide(ball, dt);
-
   // 1. Эффект Магнуса. Перпендикулярная сила плавно поворачивает вектор
   // скорости: положительный spin гнёт вправо, отрицательный — влево.
   const oldVx = ball.vx;
   const oldVz = ball.vz;
   const horizontalSpeed = Math.hypot(oldVx, oldVz);
   if (horizontalSpeed > 0.1) {
-    ball.vx += ball.spin * P.magnus * oldVz * dt;
-    ball.vz -= ball.spin * P.magnus * oldVx * dt;
+    const magnus = P.magnus * (ball.magnusScale || 1);
+    ball.vx += ball.spin * magnus * oldVz * dt;
+    ball.vz -= ball.spin * magnus * oldVx * dt;
   }
 
   // 2. Гравитация и физическое квадратичное сопротивление воздуха.
@@ -266,12 +202,6 @@ export function stepBall(ball, dt, env) {
     ball.resting = true;
     ball.vx = 0; ball.vy = 0; ball.vz = 0;
     event = event || 'stopped';
-  }
-
-  if (event || ball.resting) {
-    ball.guidePath = null;
-    ball.guideStrength = 0;
-    ball.guideSpeed = 0;
   }
 
   return event;

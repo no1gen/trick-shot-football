@@ -1,6 +1,6 @@
 import { SCREEN, WORLD, PHYSICS as P } from './config.js';
 import { Game, STATE } from './game.js';
-import { Renderer, camera, resetCamera, trackingCameraTarget, project, unprojectAtZ, ppm } from './render.js';
+import { Renderer, camera, resetCamera, trackingCameraTarget, project, unprojectAtZ } from './render.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { UI } from './ui.js';
@@ -22,48 +22,10 @@ function mapPathGesture(gesture) {
   const maxTargetX = Math.max(8, env.goalHalfWidth * 1.7);
   const targetX = clamp(target.x, -maxTargetX, maxTargetX);
   const targetY = clamp(target.y, 0.08, WORLD.goalHeight + 2.8);
-  const source = gesture.trail?.length > 1
-    ? gesture.trail
-    : [gesture.start, gesture.end];
-  const stride = Math.max(1, Math.ceil(source.length / 48));
-  const points = source.filter((_, index) => index % stride === 0);
-  if (points[points.length - 1] !== source[source.length - 1]) points.push(source[source.length - 1]);
-
-  const cumulative = [0];
-  for (let i = 1; i < points.length; i++) {
-    cumulative.push(cumulative[i - 1] + Math.hypot(
-      points[i].x - points[i - 1].x,
-      points[i].y - points[i - 1].y,
-    ));
-  }
-  const totalLength = Math.max(1, cumulative[cumulative.length - 1]);
-  const origin = game.ball;
-  const worldPath = points.map((point, index) => {
-    const t = cumulative[index] / totalLength;
-    const z = origin.z + (env.goalZ - origin.z) * t;
-    const expectedX = gesture.start.x + (gesture.end.x - gesture.start.x) * t;
-    const expectedY = gesture.start.y + (gesture.end.y - gesture.start.y) * t;
-    const lateral = (point.x - expectedX) / Math.max(1, ppm(z));
-    const vertical = (expectedY - point.y) / Math.max(1, ppm(z));
-    return {
-      x: origin.x + (targetX - origin.x) * t + lateral * 0.88,
-      y: clamp(
-        origin.y + (targetY - origin.y) * t
-          + Math.sin(Math.PI * t) * 0.72
-          + vertical * 0.68,
-        0.03,
-        WORLD.goalHeight + 4,
-      ),
-      z,
-    };
-  });
-  worldPath[0] = { x: origin.x, y: Math.max(0, origin.y), z: origin.z };
-  worldPath[worldPath.length - 1] = { x: targetX, y: targetY, z: env.goalZ };
   return {
     targetX,
     targetY,
-    spin: clamp(gesture.curvePx * P.pathSpinPerPixel, -P.maxSpin, P.maxSpin),
-    guidePath: worldPath,
+    spin: clamp(-gesture.curvePx * P.pathSpinPerPixel, -P.maxSpin, P.maxSpin),
   };
 }
 
