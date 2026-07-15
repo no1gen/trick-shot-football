@@ -116,6 +116,9 @@ export class Renderer {
     this.drawSky(ctx);
     this.drawField(ctx, state.env);
     this.drawGoal(ctx, state.env);
+    if (state.ball.guidePath?.length > 1 && state.ball.guideStrength > 0) {
+      this.drawPlayerGuide(ctx, state.ball.guidePath);
+    }
 
     const ball = state.ball;
     const wall = state.env.wall;
@@ -133,7 +136,7 @@ export class Renderer {
       if (wall) this.drawWall(ctx, wall);
     }
 
-    if (state.drag) this.drawAim(ctx, state.drag, ball, state.preview);
+    if (state.drag) this.drawAim(ctx, state.drag, ball);
 
     // Индикатор трюк-режима (зажат пробел)
     if (state.trickMode) {
@@ -437,38 +440,28 @@ export class Renderer {
     }
   }
 
-  drawAim(ctx, drag, ball, preview) {
+  drawPlayerGuide(ctx, path) {
+    const points = path.map(point => project(point.x, point.y, point.z));
+    if (points.length < 2) return;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(72,240,144,0.72)';
+    ctx.lineWidth = 1.45;
+    ctx.stroke();
+  }
+
+  drawAim(ctx, drag, ball) {
     if (drag.mode === 'path') {
-      this.drawPathAim(ctx, drag, ball, preview);
+      this.drawPathAim(ctx, drag, ball);
       return;
     }
     const bp = project(ball.x, ball.y, ball.z);
-
-    // Стабильный прогноз: одна чистая линия без отскоков и «синих зигзагов».
-    if (preview && preview.length > 1) {
-      const previewPoints = preview
-        .filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y) && Number.isFinite(pt.z))
-        .map(pt => project(pt.x, pt.y, pt.z));
-      const strokePreview = (color, width) => {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(previewPoints[0].x, previewPoints[0].y);
-        for (let i = 1; i < previewPoints.length; i++) ctx.lineTo(previewPoints[i].x, previewPoints[i].y);
-        ctx.stroke();
-      };
-      strokePreview('rgba(0,0,0,0.52)', 3.2);
-      strokePreview('rgba(72,204,248,0.92)', 1.35);
-      // Один спокойный маркер обрыва. Россыпь точек и пустое кольцо раньше
-      // визуально складывались в «петлю» на конце сильной закрутки.
-      const lp = previewPoints[previewPoints.length - 1];
-      ctx.fillStyle = 'rgba(180,238,255,0.96)';
-      ctx.beginPath();
-      ctx.arc(lp.x, lp.y, 1.35, 0, Math.PI * 2);
-      ctx.fill();
-    }
 
     // Путь оттяжки: показывает "банан", который рисует игрок
     if (drag.trail && drag.trail.length > 2) {
@@ -514,32 +507,12 @@ export class Renderer {
     }
   }
 
-  drawPathAim(ctx, drag, ball, preview) {
+  drawPathAim(ctx, drag, ball) {
     const bp = project(ball.x, ball.y, ball.z);
 
-    // Голубая линия — только физический прогноз. На сложных режимах она
-    // обрывается раньше, поэтому нарисованный путь не становится автоприцелом.
-    if (preview && preview.length > 1) {
-      const points = preview
-        .filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y) && Number.isFinite(pt.z))
-        .map(pt => project(pt.x, pt.y, pt.z));
-      if (points.length > 1) {
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.58)';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(72,204,248,0.92)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-    }
-
-    // Зелёно-белый след — именно жест игрока. Он остаётся читаемым поверх
-    // синего физического прогноза и визуально показывает величину закрутки.
+    // Единственная линия прицеливания — сам жест игрока. Отдельного
+    // предсказателя больше нет: после отпускания этот рисунок становится
+    // физическим маршрутом мяча.
     const trail = drag.trail || [];
     if (trail.length > 1) {
       const strokeTrail = (color, width) => {
@@ -583,6 +556,6 @@ export class Renderer {
     ctx.fillStyle = 'rgba(232,255,240,0.92)';
     ctx.font = '7px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('DRAW TO GOAL · BEND THE LINE TO CURVE', SCREEN.w / 2, SCREEN.h - 10);
+    ctx.fillText('DRAW FAST = POWER · BEND THE LINE = SPIN', SCREEN.w / 2, SCREEN.h - 10);
   }
 }

@@ -162,10 +162,19 @@ export class Input {
     const points = this.trail;
     if (points.length < 3) return 0;
     const start = this.dragStart;
+    const cumulative = [0];
+    for (let i = 1; i < points.length; i++) {
+      cumulative.push(cumulative[i - 1] + Math.hypot(
+        points[i].x - points[i - 1].x,
+        points[i].y - points[i - 1].y,
+      ));
+    }
+    const total = cumulative[cumulative.length - 1];
+    if (total < 0.001) return 0;
     let weighted = 0;
     let weightTotal = 0;
     for (let i = 1; i < points.length - 1; i++) {
-      const t = i / (points.length - 1);
+      const t = cumulative[i] / total;
       const expectedX = start.x + (end.x - start.x) * t;
       const weight = Math.sin(Math.PI * t);
       weighted += (points[i].x - expectedX) * weight;
@@ -176,18 +185,23 @@ export class Input {
 
   computePathShotParams(end) {
     const pathLength = this.getPathLength();
-    const flickSpeed = this.getFlickSpeed();
+    const firstTime = this.trail[0]?.t || performance.now();
+    const lastTime = this.trail[this.trail.length - 1]?.t || firstTime;
+    const drawDuration = Math.max(16, lastTime - firstTime);
+    const drawSpeed = pathLength / drawDuration;
     const curvePx = this.computePathCurve(end);
     const power = Math.max(P.minPower, Math.min(P.maxPower,
-      P.pathPowerBase + pathLength * P.pathPowerScale + flickSpeed * P.pathFlickPowerScale));
+      P.pathPowerBase + drawSpeed * P.pathDrawSpeedScale));
     const gesture = {
       pathShot: true,
       power,
       start: { ...this.dragStart },
       end: { ...end },
       pathLength,
+      drawSpeed,
       curvePx,
       spin: Math.max(-P.maxSpin, Math.min(P.maxSpin, curvePx * P.pathSpinPerPixel)),
+      trail: this.trail.map(point => ({ x: point.x, y: point.y })),
     };
     return { ...gesture, ...this.mapPathGesture(gesture) };
   }

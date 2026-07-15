@@ -7,7 +7,7 @@ A lightweight desktop browser game about bending free kicks around the wall and 
 - Curved-shot physics with spin and in-flight aftertouch
 - Drawn ground-shot paths that guide real ball physics instead of locking the ball to a rail
 - Easy, normal, and hard difficulty modes
-- Optional trajectory preview
+- Optional trail of the ball's real flight; there is no separate aim predictor
 - Ball-tracking camera and adjustable graphics quality
 - Live rebounds: shoot again from wherever the ball stops
 - Instant re-kicks while wall, post, and target-block rebounds are still moving
@@ -17,10 +17,11 @@ A lightweight desktop browser game about bending free kicks around the wall and 
 
 ## Controls
 
-- On the ground, draw from the ball toward the target; bend the line to add spin
+- On the ground, draw the route from the ball toward the target; the physics follows that route
 - For airborne balls and live rebounds, drag back and flick to kick again
-- Longer and faster drawn paths produce harder shots
-- Difficulty changes prediction length, shot error, and curve response
+- Drawing faster produces a harder and faster shot
+- Bending the drawn route farther to either side adds more spin in that direction
+- Difficulty changes route accuracy, physical guidance, shot error, and curve response
 - Move the mouse during flight for a small amount of aftertouch
 - Press `Esc` or use the pause button to pause
 

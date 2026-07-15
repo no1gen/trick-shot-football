@@ -10,6 +10,9 @@ export function createBall() {
     spin: 0,
     resting: true,
     trajectory: [],      // точки полёта для расчёта кривизны/отрисовки
+    guidePath: null,     // нарисованный игроком маршрут наземного удара
+    guideStrength: 0,
+    guideSpeed: 0,
     goalCrossing: null,  // где мяч пересёк плоскость ворот — для честной подсказки промаха
     outReason: null,
   };
@@ -23,12 +26,14 @@ export function resetBall(ball) {
   ball.onFire = false;
   ball.resting = true;
   ball.trajectory = [];
+  ball.guidePath = null;
+  ball.guideStrength = 0;
+  ball.guideSpeed = 0;
   ball.goalCrossing = null;
   ball.outReason = null;
 }
 
-// Раскладка параметров удара в стартовые скорости.
-// Единственное место маппинга — использует и реальный удар, и превью.
+// Раскладка параметров старого воздушного/повторного флика в стартовые скорости.
 export function shotVelocity({ power, dirX, dirY, spin }) {
   const shotSpeed = Math.max(P.minPower, Math.min(P.maxPower, power));
   const lift = Math.max(0, Math.min(1, dirY));
@@ -45,12 +50,45 @@ export function shotVelocity({ power, dirX, dirY, spin }) {
   };
 }
 
-// Удар по нарисованному пути: конечная точка задаёт направление и высоту,
-// изгиб — spin. Скорость рассчитывается баллистически, но дальнейший полёт
-// всё равно проходит через обычные drag, Magnus, гравитацию и столкновения.
-export function pathShotVelocity({ power, targetX, targetY, spin }, origin, env) {
+function samplePathAtZ(path, z) {
+  if (!path?.length) return null;
+  if (z <= path[0].z) return path[0];
+  for (let i = 1; i < path.length; i++) {
+    if (z <= path[i].z) {
+      const a = path[i - 1], b = path[i];
+      const span = Math.max(0.001, b.z - a.z);
+      const t = clamp((z - a.z) / span, 0, 1);
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+    }
+  }
+  return path[path.length - 1];
+}
+
+// Начальный импульс направлен по первому участку рисунка. Дальше обычные
+// силы остаются активны, а мягкое физическое наведение следует всему пути.
+export function pathShotVelocity({ power, targetX, targetY, spin, guidePath }, origin, env) {
   const start = origin || { x: 0, y: 0, z: 0 };
   const shotSpeed = clamp(power, P.minPower, P.maxPower);
+  if (guidePath?.length > 1) {
+    const firstTarget = samplePathAtZ(
+      guidePath,
+      Math.min(env.goalZ, start.z + P.pathGuideLookAhead * 1.35),
+    );
+    const dx = firstTarget.x - start.x;
+    const dy = firstTarget.y - start.y;
+    const dz = Math.max(0.1, firstTarget.z - start.z);
+    const length = Math.max(0.001, Math.hypot(dx, dy, dz));
+    return {
+      vx: shotSpeed * dx / length,
+      vy: shotSpeed * dy / length,
+      vz: shotSpeed * dz / length,
+      spin: clamp(spin, -P.maxSpin, P.maxSpin),
+    };
+  }
   const distance = Math.max(0.5, env.goalZ - start.z);
   const travelTime = clamp(distance / Math.max(8, shotSpeed * 0.82), 0.38, 2.4);
   const vz = (distance / travelTime) * 1.055;
@@ -63,38 +101,29 @@ export function pathShotVelocity({ power, targetX, targetY, spin }, origin, env)
   };
 }
 
-// Превью траектории при прицеливании: симулируем полёт на клоне мяча
-// до previewFraction дистанции (дальше игрок должен угадывать сам).
-export function simulatePreview(params, env, origin, airborneRekick = false) {
-  const start = origin || { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spin: 0 };
-  const v = params.pathShot ? pathShotVelocity(params, start, env) : shotVelocity(params);
-  const carryVx = airborneRekick ? (start.vx || 0) * P.rekickCarryX : (start.vx || 0);
-  const carryVy = airborneRekick ? clamp((start.vy || 0) * P.rekickCarryY, -1.6, 1.6) : 0;
-  const carryVz = airborneRekick ? clamp((start.vz || 0) * P.rekickCarryZ, -1.2, 0.8) : 0;
-  const pathShot = !!params.pathShot;
-  const clone = {
-    x: start.x, y: start.y, z: start.z,
-    vx: pathShot ? v.vx : carryVx + v.vx,
-    vy: pathShot ? v.vy : v.vy + carryVy,
-    vz: pathShot ? v.vz : v.vz + carryVz,
-    spin: pathShot ? v.spin : Math.max(-P.maxSpin, Math.min(P.maxSpin, v.spin + (start.spin || 0) * 0.6)),
-    resting: false,
-    trajectory: [{ x: start.x, y: start.y, z: start.z }],
-    goalCrossing: null,
-    outReason: null,
-  };
-  const cutoffZ = start.z + (env.goalZ - start.z) * (env.previewFraction ?? P.previewFraction);
-  for (let i = 0; i < 240; i++) {
-    const event = stepBall(clone, 1 / 60, env);
-    // Прогноз заканчивается на первом контакте и больше не рисует ломаные
-    // отскоки от стенки/штанги поверх линии прицеливания.
-    if (event) {
-      clone.trajectory[clone.trajectory.length - 1] = { x: clone.x, y: clone.y, z: clone.z };
-      break;
-    }
-    if (clone.resting || clone.z >= cutoffZ) break;
-  }
-  return clone.trajectory.filter(p => p.z <= cutoffZ + 0.01);
+function applyPathGuide(ball, dt) {
+  const path = ball.guidePath;
+  if (!path?.length || ball.guideStrength <= 0 || ball.vz <= 0.1) return;
+  const last = path[path.length - 1];
+  if (ball.z >= last.z - 0.03) return;
+
+  const targetZ = Math.min(last.z, ball.z + P.pathGuideLookAhead);
+  const target = samplePathAtZ(path, targetZ);
+  if (!target) return;
+  const dx = target.x - ball.x;
+  const dy = target.y - ball.y;
+  const dz = Math.max(0.05, target.z - ball.z);
+  const distance = Math.max(0.001, Math.hypot(dx, dy, dz));
+  const currentSpeed = Math.hypot(ball.vx, ball.vy, ball.vz);
+  const desiredSpeed = Math.max(currentSpeed, ball.guideSpeed * 0.68, P.minPower * 0.6);
+  const lookTime = distance / Math.max(5, desiredSpeed);
+  const desiredVx = desiredSpeed * dx / distance;
+  const desiredVy = desiredSpeed * dy / distance + P.gravity * lookTime * 0.42;
+  const desiredVz = desiredSpeed * dz / distance;
+  const blend = 1 - Math.exp(-ball.guideStrength * dt);
+  ball.vx += (desiredVx - ball.vx) * blend;
+  ball.vy += (desiredVy - ball.vy) * blend;
+  ball.vz += (desiredVz - ball.vz) * blend;
 }
 
 // Один тик физики (dt в секундах, фиксированный 1/60).
@@ -105,6 +134,11 @@ export function stepBall(ball, dt, env) {
   const prevZ = ball.z;
   const prevX = ball.x;
   const prevY = ball.y;
+
+  // Рисунок не телепортирует мяч по координатам. Он мягко поворачивает
+  // вектор скорости, поэтому гравитация, сопротивление, вращение и удары
+  // о препятствия продолжают работать как раньше.
+  applyPathGuide(ball, dt);
 
   // 1. Эффект Магнуса. Перпендикулярная сила плавно поворачивает вектор
   // скорости: положительный spin гнёт вправо, отрицательный — влево.
@@ -232,6 +266,12 @@ export function stepBall(ball, dt, env) {
     ball.resting = true;
     ball.vx = 0; ball.vy = 0; ball.vz = 0;
     event = event || 'stopped';
+  }
+
+  if (event || ball.resting) {
+    ball.guidePath = null;
+    ball.guideStrength = 0;
+    ball.guideSpeed = 0;
   }
 
   return event;

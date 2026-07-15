@@ -54,7 +54,6 @@ export class Game {
       goalScale: s.goalScale,
       targetMode: s.targetMode,
       difficulty: s.difficulty,
-      previewFraction: DIFFICULTY[s.difficulty].previewFraction,
       wall,
     };
   }
@@ -150,6 +149,9 @@ export class Game {
     this.volley = airborneRekick || b.y > 0.15; // удар с воздуха / по летящему отскоку
     b.resting = false;
     b.trajectory = [{ x: b.x, y: b.y, z: b.z }];
+    b.guidePath = null;
+    b.guideStrength = 0;
+    b.guideSpeed = 0;
     b.goalCrossing = null;
     b.outReason = null;
     const v = shotVelocity(params);
@@ -214,12 +216,35 @@ export class Game {
     const b = this.ball;
     const tuning = DIFFICULTY[this.settings.difficulty];
     const signedRandom = () => Math.random() * 2 - 1;
+    const targetErrorX = signedRandom() * tuning.pathErrorX;
+    const targetErrorY = signedRandom() * tuning.pathErrorY;
+    const bendErrorX = signedRandom() * tuning.pathErrorX * 0.45;
+    const bendErrorY = signedRandom() * tuning.pathErrorY * 0.32;
+    const startZ = params.guidePath?.[0]?.z ?? b.z;
+    const pathDistance = Math.max(0.5, this.env.goalZ - startZ);
+    const guidePath = (params.guidePath || [
+      { x: b.x, y: b.y, z: b.z },
+      { x: params.targetX, y: params.targetY, z: this.env.goalZ },
+    ]).map(point => {
+      const t = clamp((point.z - startZ) / pathDistance, 0, 1);
+      return {
+        x: point.x + targetErrorX * t + bendErrorX * Math.sin(Math.PI * t),
+        y: Math.max(0.03, point.y + targetErrorY * t + bendErrorY * Math.sin(Math.PI * t)),
+        z: point.z,
+      };
+    });
+    const actualTarget = guidePath[guidePath.length - 1];
     const actual = {
       ...params,
-      targetX: params.targetX + signedRandom() * tuning.pathErrorX,
-      targetY: Math.max(0.08, params.targetY + signedRandom() * tuning.pathErrorY),
-      power: params.power * (1 + signedRandom() * tuning.pathPowerVariance),
+      targetX: actualTarget.x,
+      targetY: actualTarget.y,
+      power: clamp(
+        params.power * (1 + signedRandom() * tuning.pathPowerVariance),
+        P.minPower,
+        P.maxPower,
+      ),
       spin: params.spin * tuning.pathSpinFactor * (1 + signedRandom() * 0.08),
+      guidePath,
     };
     const v = pathShotVelocity(actual, b, this.env);
 
@@ -230,6 +255,9 @@ export class Game {
     this.easyAssistActive = false;
     b.resting = false;
     b.trajectory = [{ x: b.x, y: b.y, z: b.z }];
+    b.guidePath = guidePath;
+    b.guideStrength = tuning.pathGuideStrength;
+    b.guideSpeed = actual.power;
     b.goalCrossing = null;
     b.outReason = null;
     b.vx = v.vx;
@@ -271,7 +299,7 @@ export class Game {
         b.spin = Math.max(-P.maxSpin * 1.2, Math.min(P.maxSpin * 1.2, b.spin));
         b.vx += Math.max(-2.5, Math.min(2.5, this.aftertouchVelX)) * P.aftertouchSideAccel * aftertouchFactor * dt;
       }
-      if (this.settings.difficulty === 'normal') this.applyAimAssist(dt);
+      if (this.settings.difficulty === 'normal' && !b.guidePath) this.applyAimAssist(dt);
       b.spinPhase = (b.spinPhase || 0) + b.spin * dt * 0.12 + b.vz * dt * 0.5;
       const event = stepBall(b, dt, this.env);
       if (event === 'post') this.sound.post();
@@ -308,6 +336,9 @@ export class Game {
     b.onFire = false;
     b.resting = true;
     b.trajectory = [];
+    b.guidePath = null;
+    b.guideStrength = 0;
+    b.guideSpeed = 0;
     b.goalCrossing = null;
     b.outReason = null;
     this.aftertouchVelX = 0;

@@ -112,7 +112,7 @@ export class UI {
     document.getElementById('wall-height-row').style.opacity = g.wallEnabled ? '1' : '0.35';
     const buttons = [document.getElementById('opt-trajectory'), this.trajectoryToggle];
     for (const button of buttons) {
-      button.textContent = g.trajectoryEnabled ? 'TRAJECTORY: ON' : 'TRAJECTORY: OFF';
+      button.textContent = g.trajectoryEnabled ? 'BALL TRAIL: ON' : 'BALL TRAIL: OFF';
       button.classList.toggle('active', g.trajectoryEnabled);
       button.setAttribute('aria-pressed', String(g.trajectoryEnabled));
     }

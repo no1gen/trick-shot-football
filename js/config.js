@@ -17,10 +17,10 @@ export const PHYSICS = {
   shotSideForwardLoss: 0.22, // диагональный удар честно теряет часть скорости вперёд
   pathStartRadius: 32,   // насколько близко к мячу можно начать рисовать путь (px канваса)
   pathMinLength: 18,     // короткий жест остаётся чеканкой, а не случайным ударом
-  pathPowerBase: 16,     // базовая сила нарисованного удара
-  pathPowerScale: 0.105, // длинная линия добавляет силу
-  pathFlickPowerScale: 4.5, // быстрый финал линии добавляет импульс
+  pathPowerBase: 14,     // минимальная скорость медленно нарисованного удара
+  pathDrawSpeedScale: 13, // средняя скорость рисования (px/ms) → скорость мяча
   pathSpinPerPixel: 4.8, // изгиб нарисованной линии → вращение мяча
+  pathGuideLookAhead: 1.25, // сколько метров маршрута физика видит перед мячом
   powerScale: 0.29,      // перевод пикселей оттяжки в силу
   flickPowerScale: 14.5, // сила от скорости флика (px/ms → м/с)
   aimDragX: 122,         // более широкое рабочее окно бокового прицела
@@ -29,7 +29,6 @@ export const PHYSICS = {
   spinInputWindow: 115,  // последние миллисекунды жеста формируют вращение
   spinDeadZone: 35,      // медленный боковой шум мыши не крутит мяч (px/с)
   spinSensitivity: 0.0025,
-  previewFraction: 0.70, // полезная, но не полная подсказка траектории
   // Aftertouch — ГЛАВНАЯ механика закрутки: ведёшь мышь во время полёта → мяч гнётся
   aftertouchWindow: 0.9, // времени достаточно для осознанной коррекции в воздухе
   aftertouchRate: 24,    // мышь заметно докручивает мяч, не превращаясь в автопилот
@@ -120,30 +119,30 @@ export const PALETTE = {
 export const DIFFICULTY = {
   easy: {
     assistChance: 0.6,
-    previewFraction: 0.84,
     aftertouchFactor: 1.2,
     pathErrorX: 0.16,
     pathErrorY: 0.12,
     pathPowerVariance: 0.025,
     pathSpinFactor: 0.92,
+    pathGuideStrength: 16,
   },
   normal: {
     assistChance: 0,
-    previewFraction: PHYSICS.previewFraction,
     aftertouchFactor: 1,
     pathErrorX: 0.38,
     pathErrorY: 0.25,
     pathPowerVariance: 0.06,
     pathSpinFactor: 1,
+    pathGuideStrength: 10,
   },
   hard: {
     assistChance: 0,
-    previewFraction: 0.55,
     aftertouchFactor: 0.78,
     pathErrorX: 0.8,
     pathErrorY: 0.48,
     pathPowerVariance: 0.12,
     pathSpinFactor: 1.15,
+    pathGuideStrength: 5.8,
   },
 };
 
@@ -156,6 +155,6 @@ export const DEFAULT_SETTINGS = {
   wallPlayers: 3,        // 1..25
   wallHeight: WORLD.wallPlayerHeight, // 0.6..4.0 м
   distance: 16,          // метров до ворот
-  trajectoryEnabled: true, // прогноз при прицеливании + след реального удара
+  trajectoryEnabled: true, // только след реального мяча; отдельного предсказателя больше нет
   quality: 3,            // уровень детализации 1x..6x; пиксели адаптируются к экрану
 };
