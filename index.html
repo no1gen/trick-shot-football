@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trick-Shot Football</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <span id="hud-score">SCORE 0</span>
+      <span id="hud-combo" class="hidden">COMBO x1</span>
+      <span id="hud-shot">SHOT 1/10</span>
+    </div>
+
+    <button id="trajectory-toggle" class="game-toggle hidden active" type="button" aria-pressed="true">TRAJECTORY: ON</button>
+    <button id="pause-toggle" class="game-toggle pause-toggle hidden" type="button">PAUSE · ESC</button>
+
+    <div id="shot-banner" class="hidden"></div>
+
+    <!-- Меню -->
+    <div id="menu" class="overlay">
+      <div class="title">TRICK-SHOT FOOTBALL</div>
+      <div class="subtitle">
+        DRAG BACK &amp; FLICK TO SHOOT — FASTER FLICK = HARDER SHOT<br>
+        MOVE MOUSE DURING FLIGHT TO BEND THE BALL (AFTERTOUCH)<br>
+        HOLD SPACE + FLICK = TRICKS &amp; AIR SPIN · TAP = JUGGLE · ARROWS = CAMERA
+      </div>
+
+      <div class="opt-row">
+        <label>GOAL SIZE</label>
+        <input type="range" id="opt-goal-size" min="0.5" max="1.2" step="0.1" value="1.0">
+        <span class="val" id="opt-goal-size-val">NORMAL</span>
+      </div>
+
+      <div class="opt-row difficulty-row">
+        <label>DIFFICULTY</label>
+        <div class="btn-group">
+          <button id="opt-difficulty-easy" type="button" aria-pressed="false">EASY</button>
+          <button id="opt-difficulty-normal" class="active" type="button" aria-pressed="true">NORMAL</button>
+          <button id="opt-difficulty-hard" type="button" aria-pressed="false">HARD</button>
+        </div>
+        <span class="val difficulty-note" id="opt-difficulty-val">BALANCED</span>
+      </div>
+
+      <div class="opt-row">
+        <label>TARGET</label>
+        <div class="btn-group">
+          <button id="opt-mode-any" class="active">ANY GOAL</button>
+          <button id="opt-mode-corners">ONLY TOP 9</button>
+        </div>
+      </div>
+
+      <div class="opt-row">
+        <label>WALL</label>
+        <button id="opt-wall-toggle" class="active">WALL: ON</button>
+      </div>
+
+      <div class="opt-row" id="wall-n-row">
+        <label>WALL PLAYERS</label>
+        <input type="range" id="opt-wall-n" min="1" max="5" step="1" value="3">
+        <span class="val" id="opt-wall-n-val">3</span>
+      </div>
+
+      <div class="opt-row">
+        <label>DISTANCE</label>
+        <input type="range" id="opt-distance" min="11" max="25" step="1" value="16">
+        <span class="val" id="opt-distance-val">16m</span>
+      </div>
+
+      <div class="opt-row">
+        <label>TRAJECTORY</label>
+        <button id="opt-trajectory" class="active" type="button" aria-pressed="true">TRAJECTORY: ON</button>
+      </div>
+
+      <div class="opt-row">
+        <label for="opt-quality">QUALITY</label>
+        <input type="range" id="opt-quality" min="1" max="6" step="1" value="3">
+        <span class="val" id="opt-quality-val">3X</span>
+      </div>
+
+      <button id="btn-start" class="btn-big">KICK OFF!</button>
+      <div class="subtitle" id="menu-highscore">HI-SCORE: 0</div>
+    </div>
+
+    <!-- Пауза -->
+    <div id="pause" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+      <div class="title" id="pause-title">PAUSED</div>
+      <div class="subtitle">THE BALL AND CAMERA ARE FROZEN · PRESS ESC TO RESUME</div>
+      <div class="opt-row">
+        <label for="pause-quality">QUALITY</label>
+        <input type="range" id="pause-quality" min="1" max="6" step="1" value="3">
+        <span class="val" id="pause-quality-val">3X</span>
+      </div>
+      <div class="btn-group pause-actions">
+        <button id="btn-resume" class="btn-big">RESUME</button>
+        <button id="btn-restart">RESTART</button>
+        <button id="btn-exit-menu">EXIT TO MENU</button>
+      </div>
+    </div>
+
+    <!-- Итог сессии -->
+    <div id="result" class="overlay hidden">
+      <div class="title">FULL TIME</div>
+      <div id="result-score">0</div>
+      <div id="result-record"></div>
+      <div id="result-best"></div>
+      <div class="btn-group" style="margin-top:14px">
+        <button id="btn-again" class="btn-big">PLAY AGAIN</button>
+        <button id="btn-share">SHARE 📸</button>
+        <button id="btn-menu">MENU</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
