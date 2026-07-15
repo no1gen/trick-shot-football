@@ -182,7 +182,11 @@ export class UI {
 
     if (inGame) {
       document.getElementById('hud-score').textContent = 'SCORE ' + g.totalScore;
-      document.getElementById('hud-shot').textContent = 'SHOT ' + Math.min(g.shotIndex + 1, SCORING.shotsPerSession) + '/' + SCORING.shotsPerSession;
+      const kickNumber = g.state === STATE.AIM && g.kicksThisRound > 0
+        ? g.kicksThisRound + 1
+        : g.kicksThisRound;
+      const kickLabel = kickNumber > 1 ? ' · KICK ' + kickNumber : '';
+      document.getElementById('hud-shot').textContent = 'SHOT ' + Math.min(g.shotIndex + 1, SCORING.shotsPerSession) + '/' + SCORING.shotsPerSession + kickLabel;
       const comboEl = document.getElementById('hud-combo');
       if (g.combo > 0) {
         comboEl.textContent = 'COMBO x' + g.combo;
@@ -204,6 +208,9 @@ export class UI {
       this.shotBanner.textContent = text;
       this.shotBanner.classList.remove('hidden');
       this.shotBanner.classList.toggle('goal', s.points > 0);
+    } else if (g.state === STATE.AIM && g.retryPromptTimer > 0) {
+      this.shotBanner.textContent = 'BALL STILL LIVE — KICK AGAIN!';
+      this.shotBanner.classList.remove('hidden', 'goal');
     } else {
       this.shotBanner.classList.add('hidden');
     }

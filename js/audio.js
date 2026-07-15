@@ -99,6 +99,20 @@ export class Sound {
     o.start(); o.stop(ctx.currentTime + 0.36);
   }
 
+  wall() {
+    if (this.muted) return;
+    const ctx = this.ensure();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(105, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(48, ctx.currentTime + 0.14);
+    g.gain.setValueAtTime(0.24, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.17);
+  }
+
   goal() {
     if (this.muted) return;
     const ctx = this.ensure();

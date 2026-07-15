@@ -1,18 +1,55 @@
 import { CAM, SCREEN, PALETTE as C, WORLD, PHYSICS as P } from './config.js';
 
 // ---- Камера (двигается стрелками) ----
-export const camera = { x: 0, y: CAM.height, z: 0 };
+export const camera = { x: 0, y: CAM.height, z: 0, zoom: 1 };
 
 export function resetCamera() {
   camera.x = 0;
   camera.y = CAM.height;
   camera.z = 0;
+  camera.zoom = 1;
 }
 
 // ---- 2.5D проекция ----
 // px/м на глубине z (камера в CAM.back метрах позади мяча)
 export function ppm(z) {
-  return CAM.focal / Math.max(0.65, z - camera.z + CAM.back);
+  return (CAM.focal * camera.zoom) / Math.max(0.65, z - camera.z + CAM.back);
+}
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+// Кадрируем сразу два объекта: мяч и ворота. Вес по перспективному масштабу
+// даёт ощущение поворота камеры к воротам, а динамический zoom спасает высокие
+// и широкие мячи без скачков горизонта.
+export function trackingCameraTarget(ball, env) {
+  const targetZ = ball.z < 0
+    ? clamp(ball.z * 0.65, -WORLD.fieldBack + 1, 0)
+    : clamp(ball.z * 0.34, 0, env.goalZ * 0.36);
+  const rawScale = z => CAM.focal / Math.max(0.75, z - targetZ + CAM.back);
+  const ballScale = rawScale(ball.z);
+  const goalScale = rawScale(env.goalZ);
+  const targetX = ball.x * ballScale / Math.max(0.001, ballScale + goalScale);
+  const targetY = CAM.height + Math.max(0, ball.y - 0.6) * 0.72;
+
+  const ballOffsetX = Math.abs((ball.x - targetX) * ballScale) + WORLD.ballRadius * ballScale;
+  const goalOffsetX = Math.abs(targetX * goalScale) + env.goalHalfWidth * goalScale;
+  const horizontalExtent = Math.max(ballOffsetX, goalOffsetX, 1);
+  let zoom = Math.min(1, (SCREEN.w / 2 - 24) / horizontalExtent);
+
+  const topRoom = CAM.horizonY - 20;
+  const bottomRoom = SCREEN.h - 22 - CAM.horizonY;
+  const verticalOffsets = [
+    (targetY - ball.y) * ballScale,
+    targetY * goalScale,
+    (targetY - WORLD.goalHeight) * goalScale,
+  ];
+  for (const offset of verticalOffsets) {
+    if (offset < -0.001) zoom = Math.min(zoom, topRoom / -offset);
+    else if (offset > 0.001) zoom = Math.min(zoom, bottomRoom / offset);
+  }
+
+  // Небольшой запас компенсирует сглаживание при резком отскоке.
+  return { x: targetX, y: targetY, z: targetZ, zoom: clamp(zoom * 0.94, 0.34, 1) };
 }
 
 // Мировая точка (x вбок, y вверх, z вглубь) → экран

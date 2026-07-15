@@ -8,6 +8,7 @@ A lightweight desktop browser game about bending free kicks around the wall and 
 - Easy, normal, and hard difficulty modes
 - Optional trajectory preview
 - Ball-tracking camera and adjustable graphics quality
+- Live rebounds: shoot again from wherever the ball stops
 - Pause menu, scoring, streaks, and top-corner challenges
 
 ## Controls

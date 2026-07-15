@@ -31,6 +31,8 @@ export class Game {
     this.flightTime = 0;
     this.aftertouchVelX = 0; // скорость мыши, подаётся из main каждый кадр
     this.easyAssistActive = false;
+    this.kicksThisRound = 0;
+    this.retryPromptTimer = 0;
     this.pausedFrom = null;
   }
 
@@ -119,9 +121,13 @@ export class Game {
   shoot(params) {
     if (this.state !== STATE.AIM) return;
     const b = this.ball;
+    this.kicksThisRound++;
+    this.retryPromptTimer = 0;
     this.volley = b.y > 0.15; // удар с воздуха
     b.resting = false;
     b.trajectory = [{ x: b.x, y: b.y, z: b.z }];
+    b.goalCrossing = null;
+    b.outReason = null;
     const v = shotVelocity(params);
     const difficulty = this.settings.difficulty;
     const tuning = DIFFICULTY[difficulty];
@@ -184,6 +190,7 @@ export class Game {
     const b = this.ball;
 
     if (this.state === STATE.AIM) {
+      this.retryPromptTimer = Math.max(0, this.retryPromptTimer - dt);
       stepJuggle(b, dt);
       // Мяч упал и лежит → комбо сгорает
       if (b.y <= 0 && b.vy === 0 && this.combo > 0 && this._wasAirborne) {
@@ -207,13 +214,13 @@ export class Game {
       b.spinPhase = (b.spinPhase || 0) + b.spin * dt * 0.12 + b.vz * dt * 0.5;
       const event = stepBall(b, dt, this.env);
       if (event === 'post') this.sound.post();
-      if (event === 'wall') {
-        this.sound.miss();
-      }
+      if (event === 'wall') this.sound.wall();
       if (event === 'goal' || event === 'topCorner') {
         this.finishShot(event === 'topCorner');
+      } else if (event === 'miss' || event === 'out') {
+        this.finishShot(null);
       } else if (b.resting) {
-        this.finishShot(null); // мимо / застрял
+        this.prepareRetry();
       }
       return;
     }
@@ -223,6 +230,24 @@ export class Game {
       // Мяч в сетке пусть висит; таймер выводит на следующий удар
       if (this.shotResultTimer <= 0) this.nextShot();
     }
+  }
+
+  // Отскок или слабый удар не заканчивают розыгрыш. Если мяч остался в
+  // пределах поля, игрок бьёт снова прямо с той точки, где он остановился.
+  prepareRetry() {
+    const b = this.ball;
+    b.vx = 0; b.vy = 0; b.vz = 0;
+    b.spin = 0;
+    b.onFire = false;
+    b.resting = true;
+    b.trajectory = [];
+    b.goalCrossing = null;
+    b.outReason = null;
+    this.aftertouchVelX = 0;
+    this.flightTime = 0;
+    this.easyAssistActive = false;
+    this.retryPromptTimer = 1.6;
+    this.state = STATE.AIM;
   }
 
   // Небольшая помощь только у самой рамки. Плохой удар она не исправляет,
@@ -277,7 +302,7 @@ export class Game {
       }
     } else {
       const crossing = b.goalCrossing;
-      let missReason = 'BLOCKED OR SHORT';
+      let missReason = b.outReason || 'OUT OF PLAY';
       if (crossing) {
         if (crossing.y > WORLD.goalHeight) missReason = 'TOO HIGH';
         else if (crossing.x < -this.env.goalHalfWidth) missReason = 'WIDE LEFT';
@@ -301,6 +326,8 @@ export class Game {
     this.combo = 0;
     this.volley = false;
     this.easyAssistActive = false;
+    this.kicksThisRound = 0;
+    this.retryPromptTimer = 0;
     if (this.shotIndex >= SCORING.shotsPerSession) {
       this.state = STATE.SESSION_RESULT;
       this.saveHighScore();

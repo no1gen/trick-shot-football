@@ -9,6 +9,7 @@ export function createBall() {
     resting: true,
     trajectory: [],      // точки полёта для расчёта кривизны/отрисовки
     goalCrossing: null,  // где мяч пересёк плоскость ворот — для честной подсказки промаха
+    outReason: null,
   };
 }
 
@@ -21,6 +22,7 @@ export function resetBall(ball) {
   ball.resting = true;
   ball.trajectory = [];
   ball.goalCrossing = null;
+  ball.outReason = null;
 }
 
 // Раскладка параметров удара в стартовые скорости.
@@ -53,6 +55,7 @@ export function simulatePreview(params, env, origin) {
     resting: false,
     trajectory: [{ x: start.x, y: start.y, z: start.z }],
     goalCrossing: null,
+    outReason: null,
   };
   const cutoffZ = start.z + (env.goalZ - start.z) * (env.previewFraction ?? P.previewFraction);
   for (let i = 0; i < 240; i++) {
@@ -69,7 +72,7 @@ export function simulatePreview(params, env, origin) {
 }
 
 // Один тик физики (dt в секундах, фиксированный 1/60).
-// Возвращает событие: null | 'goal' | 'topCorner' | 'post' | 'wall' | 'miss' | 'stopped'
+// Возвращает событие: null | 'goal' | 'topCorner' | 'post' | 'wall' | 'miss' | 'out' | 'stopped'
 export function stepBall(ball, dt, env) {
   if (ball.resting) return null;
 
@@ -115,6 +118,14 @@ export function stepBall(ball, dt, env) {
     ball.vz *= P.groundFriction;
     ball.spin *= 0.8;
     if (Math.abs(ball.vy) < 0.8) ball.vy = 0;
+  }
+
+  // Когда прыжки закончились, мяч катится с отдельным сопротивлением.
+  // Без него слабый отскок мог скользить почти бесконечно.
+  if (ball.y <= 0.001 && ball.vy === 0) {
+    const rolling = Math.exp(-P.rollingFriction * dt);
+    ball.vx *= rolling;
+    ball.vz *= rolling;
   }
 
   // --- Стенка (плоскость z = wallZ) ---
@@ -171,10 +182,13 @@ export function stepBall(ball, dt, env) {
     }
   }
 
-  // --- Мяч улетел далеко мимо или остановился ---
-  if (ball.z > env.goalZ + 6 || Math.abs(ball.x) > 30) {
+  // --- Границы поля ---
+  if (Math.abs(ball.x) > WORLD.fieldHalfWidth || ball.z < -WORLD.fieldBack) {
     ball.resting = true;
-    if (!event) event = 'miss';
+    ball.outReason = Math.abs(ball.x) > WORLD.fieldHalfWidth
+      ? (ball.x < 0 ? 'OUT LEFT' : 'OUT RIGHT')
+      : 'OUT BEHIND';
+    event = 'out';
   }
   const totalV = Math.hypot(ball.vx, ball.vy, ball.vz);
   if (ball.y <= 0.01 && totalV < 0.5 && !ball.resting) {

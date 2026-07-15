@@ -1,7 +1,7 @@
-import { SCREEN, CAM, PHYSICS as P } from './config.js';
+import { SCREEN, WORLD, PHYSICS as P } from './config.js';
 import { Game, STATE } from './game.js';
 import { simulatePreview } from './physics.js';
-import { Renderer, camera, resetCamera } from './render.js';
+import { Renderer, camera, resetCamera, trackingCameraTarget } from './render.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { UI } from './ui.js';
@@ -66,24 +66,21 @@ let lastUiAt = 0;
 let previousVisualState = STATE.MENU;
 
 function updateCameraTracking(dt, visualState, env) {
-  if (game.state === STATE.PAUSED) return;
-  if (visualState === STATE.FLIGHT) {
-    const follow = 1 - Math.exp(-5.2 * dt);
-    const targetX = game.ball.x * 0.62;
-    const targetY = Math.max(1.45, Math.min(2.55, CAM.height + game.ball.y * 0.18));
-    const targetZ = Math.min(game.ball.z * 0.34, env.goalZ * 0.3);
-    camera.x += (targetX - camera.x) * follow;
-    camera.y += (targetY - camera.y) * follow;
-    camera.z += (targetZ - camera.z) * follow;
-    return;
-  }
+  if (game.state === STATE.PAUSED || ![STATE.AIM, STATE.FLIGHT].includes(visualState)) return false;
+  if (visualState === STATE.AIM && keys.size > 0) return true;
 
-  if (visualState === STATE.AIM && keys.size === 0) {
-    const settle = 1 - Math.exp(-3.5 * dt);
-    camera.x += (0 - camera.x) * settle;
-    camera.y += (CAM.height - camera.y) * settle;
-    camera.z += (0 - camera.z) * settle;
-  }
+  const target = trackingCameraTarget(game.ball, env);
+  const positionFollow = 1 - Math.exp(-(visualState === STATE.FLIGHT ? 8.5 : 6.5) * dt);
+  // Отъезжаем быстрее, чем приближаемся: мяч не успевает выскочить за кадр,
+  // а возврат не создаёт тяжёлого визуального рывка.
+  const zoomFollow = 1 - Math.exp(-(target.zoom < camera.zoom ? 14 : 4.5) * dt);
+  const beforeX = camera.x, beforeY = camera.y, beforeZ = camera.z, beforeZoom = camera.zoom;
+  camera.x += (target.x - camera.x) * positionFollow;
+  camera.y += (target.y - camera.y) * positionFollow;
+  camera.z += (target.z - camera.z) * positionFollow;
+  camera.zoom += (target.zoom - camera.zoom) * zoomFollow;
+  return Math.abs(camera.x - beforeX) + Math.abs(camera.y - beforeY)
+    + Math.abs(camera.z - beforeZ) + Math.abs(camera.zoom - beforeZoom) > 0.0008;
 }
 
 function frame(now) {
@@ -115,17 +112,12 @@ function frame(now) {
     if (keys.has('ArrowUp')) camera.y += camSpeed * 0.6;
     if (keys.has('ArrowDown')) camera.y -= camSpeed * 0.6;
   }
-  camera.x = Math.max(-6, Math.min(6, camera.x));
-  camera.y = Math.max(0.8, Math.min(4, camera.y));
-  if (!newShotStarted) updateCameraTracking(DT, visualState, env);
+  camera.x = Math.max(-WORLD.fieldHalfWidth, Math.min(WORLD.fieldHalfWidth, camera.x));
+  camera.y = Math.max(0.8, Math.min(24, camera.y));
+  const cameraChanged = !newShotStarted && updateCameraTracking(DT, visualState, env);
 
   const drag = game.state === STATE.AIM ? input.getDragState() : null;
-  const cameraMoving = visualState === STATE.AIM && keys.size === 0 && (
-    Math.abs(camera.x) > 0.015
-    || Math.abs(camera.y - CAM.height) > 0.015
-    || Math.abs(camera.z) > 0.015
-  );
-  const activeMotion = visualState === STATE.FLIGHT || game.ball.y > 0.02 || !!drag || keys.size > 0 || cameraMoving;
+  const activeMotion = visualState === STATE.FLIGHT || game.ball.y > 0.02 || !!drag || keys.size > 0 || cameraChanged;
   const idleInterval = game.settings.quality >= 5 ? 80 : 100;
   // Если конкретный компьютер не успевает рисовать кадр дешевле 12 мс,
   // автоматически держим стабильные 30 FPS вместо рваных случайных пропусков.
